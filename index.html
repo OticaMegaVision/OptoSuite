@@ -4,9 +4,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>OptoSuite Pro — Bateria de Testes Visuais</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Archivo:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg: #0a0d10;
@@ -441,20 +438,28 @@
   }
   .disclaimer b{ color:var(--muted); }
 
-  @media (max-width: 980px){
-    .shell{ grid-template-columns:1fr; }
-    .sidebar{
-      flex-direction:row;
-      overflow-x:auto;
-      padding:14px;
-      gap:14px;
-    }
-    .sidebar-foot{ display:none; }
-    nav.test-nav{ flex-direction:row; }
-    .nav-item::before{ display:none; }
-    .brand{ display:none; }
-    .nav-section-label{ display:none; }
-  }
+  /* layout fixo de duas colunas: a TV é sempre horizontal */
+  .shell{ min-width:1280px; }
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0a0d10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" href="icons/icon-192.png">
+<style id="testmode-css">
+  body.test-mode .sidebar, body.test-mode .topbar, body.test-mode .panel-head,
+  body.test-mode .panel-controls, body.test-mode .panel-dock, body.test-mode .sidebar-foot,
+  body.test-mode .panel:not(.active){ display:none !important; }
+  body.test-mode{ background:#000 !important; overflow:hidden; }
+  body.test-mode .shell, body.test-mode .main, body.test-mode .panel.active, body.test-mode .panel.active .panel-body{
+    position:fixed !important; inset:0 !important; width:100vw !important; height:100vh !important; margin:0 !important;
+    padding:0 !important; background:#000 !important; border:0 !important; border-radius:0 !important; }
+  body.test-mode .panel.active .panel-body{ display:flex; align-items:center; justify-content:center; }
+  #tmBar{ position:fixed; left:0; right:0; bottom:22px; display:flex; justify-content:center; gap:12px; z-index:50; }
+  #tmBar .tv-focus{ outline:3px solid #33d1b8 !important; outline-offset:3px; }
+  #tmHint{ position:fixed; left:0; right:0; top:22px; text-align:center; color:#8b939c; font:16px Roboto,Arial,sans-serif;
+    opacity:0; transition:opacity .4s; pointer-events:none; z-index:60; }
+  #tmHint.show{ opacity:1; }
+  .tm-start{ height:46px; padding:0 22px; border-radius:23px; border:0; background:#f4e400; color:#111; font-weight:700; font-size:15px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -988,14 +993,9 @@ function randRange(a,b){ return a + Math.random()*(b-a); }
 
   document.addEventListener('keydown', (e)=>{
     if(!document.getElementById('panel-acuidade').classList.contains('active')) return;
-    if(['ArrowUp','ArrowDown','Enter'].includes(e.key)) e.preventDefault();
-    if(e.key === 'ArrowDown' && state.line < N_LINES-1){ state.line++; render(); }
-    else if(e.key === 'ArrowUp' && state.line > 0){ state.line--; render(); }
-    else if(e.key === 'Enter'){
-      state.mode = state.mode === 'linha' ? 'tabela' : 'linha';
-      document.querySelectorAll('#acMode button').forEach(b=>b.classList.toggle('active', b.dataset.v===state.mode));
-      render();
-    }
+    const k = e.keyCode;
+    if((k===34 || e.key==='PageDown') && state.line < N_LINES-1){ e.preventDefault(); state.line++; render(); }
+    else if((k===33 || e.key==='PageUp') && state.line > 0){ e.preventDefault(); state.line--; render(); }
   });
 
   render();
@@ -1319,5 +1319,127 @@ function randRange(a,b){ return a + Math.random()*(b-a); }
 })();
 </script>
 
+
+<script>
+/* ===== Controle remoto webOS: setas movem o foco, OK ativa, Voltar vai ao menu ===== */
+(function(){
+  var cur=null;
+  function visible(e){
+    var r=e.getBoundingClientRect(), cs=getComputedStyle(e);
+    return r.width>0 && r.height>0 && cs.visibility!=='hidden' && cs.display!=='none';
+  }
+  function focusables(){
+    var all=Array.prototype.slice.call(document.querySelectorAll('.nav-item, button, select, input'));
+    return all.filter(function(e){
+      if(e.disabled || !visible(e)) return false;
+      if(e.closest('.sidebar')) return true;
+      var p=e.closest('.panel');
+      return !p || p.classList.contains('active');
+    });
+  }
+  function center(e){ var r=e.getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2}; }
+  function mark(){
+    document.querySelectorAll('.tv-focus').forEach(function(e){ e.classList.remove('tv-focus'); });
+    if(cur){ cur.classList.add('tv-focus'); if(cur.focus) cur.focus({preventScroll:true}); if(cur.scrollIntoView) cur.scrollIntoView({block:'nearest',inline:'nearest'}); }
+  }
+  function move(dir){
+    var list=focusables(); if(!list.length) return;
+    if(!cur || list.indexOf(cur)<0){ cur=list[0]; mark(); return; }
+    var c=center(cur), best=null, bd=Infinity;
+    list.forEach(function(e){
+      if(e===cur) return;
+      var p=center(e), dx=p.x-c.x, dy=p.y-c.y;
+      var horiz=(dir==='left'||dir==='right');
+      var ok = dir==='right'?dx>4 : dir==='left'?dx<-4 : dir==='down'?dy>4 : dy<-4;
+      if(!ok) return;
+      var main=horiz?Math.abs(dx):Math.abs(dy), cross=horiz?Math.abs(dy):Math.abs(dx);
+      var d=main+cross*2.5;
+      if(d<bd){ bd=d; best=e; }
+    });
+    if(best){ cur=best; mark(); }
+  }
+  document.addEventListener('keydown', function(e){
+    var k=e.keyCode;
+    var dir = k===37?'left' : k===39?'right' : k===38?'up' : k===40?'down' : null;
+    if(dir){
+      if(cur && cur.tagName==='INPUT' && (dir==='left'||dir==='right')) return;
+      e.preventDefault(); move(dir); return;
+    }
+    if(k===13){
+      if(cur && cur.tagName!=='INPUT'){ e.preventDefault(); cur.click(); }
+      return;
+    }
+    if(k===461 || k===8 || k===27){
+      /* Voltar: leva o foco ao primeiro item do menu lateral */
+      var first=document.querySelector('.nav-item');
+      if(first){ e.preventDefault(); cur=first; mark(); }
+    }
+  });
+  document.addEventListener('DOMContentLoaded', function(){
+    var first=document.querySelector('.nav-item.active') || document.querySelector('.nav-item');
+    if(first){ cur=first; mark(); }
+  });
+})();
+</script>
+<style>
+  .tv-focus{ outline:3px solid #33d1b8 !important; outline-offset:3px; box-shadow:0 0 0 7px rgba(51,209,184,.18) !important; }
+  #fullscreenBtn{ display:none !important; }
+</style>
+
+<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}</script>
+<script>
+/* ===== Modo teste em tela cheia (todos os testes) ===== */
+(function(){
+  var PANELS=['acuidade','daltonismo','astigmatismo','amsler','contraste','duocromatico'];
+  var active=null, moved=[], bar=null, bIdx=0;
+  var hint=document.createElement('div'); hint.id='tmHint'; hint.textContent='Pressione Voltar para sair do teste';
+  document.body.appendChild(hint); var hintT;
+
+  PANELS.forEach(function(id){
+    var p=document.getElementById('panel-'+id); if(!p) return;
+    var host=p.querySelector('.dock-actions') || p.querySelector('.panel-dock'); if(!host) return;
+    var b=document.createElement('button'); b.className='tm-start'; b.textContent='Iniciar em tela cheia';
+    b.addEventListener('click', function(){ enter(id); });
+    host.insertBefore(b, host.firstChild);
+  });
+
+  function enter(id){
+    active=document.getElementById('panel-'+id); if(!active) return;
+    if(id==='acuidade'){ var lin=document.querySelector('#acMode button[data-v="linha"]'); if(lin) lin.click(); }
+    document.body.classList.add('test-mode');
+    bar=document.createElement('div'); bar.id='tmBar'; document.body.appendChild(bar);
+    var acts=Array.prototype.slice.call(active.querySelectorAll('[data-ans], #dNext, #astSave, #amClear'));
+    acts.forEach(function(e){ moved.push({el:e,parent:e.parentNode,next:e.nextSibling}); bar.appendChild(e); });
+    bIdx=0; markBar();
+    hint.classList.add('show'); clearTimeout(hintT); hintT=setTimeout(function(){ hint.classList.remove('show'); },4000);
+  }
+  function exit(){
+    for(var i=moved.length-1;i>=0;i--){
+      var m=moved[i];
+      if(m.next && m.next.parentNode===m.parent) m.parent.insertBefore(m.el,m.next); else m.parent.appendChild(m.el);
+    }
+    moved=[]; if(bar){ bar.remove(); bar=null; }
+    document.body.classList.remove('test-mode'); active=null;
+  }
+  function markBar(){
+    if(!bar) return;
+    var items=Array.prototype.slice.call(bar.children);
+    items.forEach(function(e,i){ e.classList.toggle('tv-focus', i===bIdx); });
+    if(items[bIdx] && items[bIdx].focus) items[bIdx].focus({preventScroll:true});
+  }
+  window.addEventListener('keydown', function(e){
+    if(!document.body.classList.contains('test-mode')) return;
+    var k=e.keyCode;
+    if(k===461 || k===8 || k===27 || k===10009){ e.preventDefault(); e.stopImmediatePropagation(); exit(); return; }
+    if(k===38 || k===33 || e.key==='ArrowUp' || e.key==='PageUp'){ e.preventDefault(); e.stopImmediatePropagation(); var p=document.getElementById('acPrev'); if(p && active && active.id==='panel-acuidade') p.click(); return; }
+    if(k===40 || k===34 || e.key==='ArrowDown' || e.key==='PageDown'){ e.preventDefault(); e.stopImmediatePropagation();
+      var n=document.getElementById('acNext')||document.getElementById('dNext'); if(n && active && (active.id==='panel-acuidade'||active.id==='panel-daltonismo')) n.click(); return; }
+    if((k===37 || k===39) && bar && bar.children.length){ e.preventDefault(); e.stopImmediatePropagation();
+      var len=bar.children.length; bIdx=(bIdx+(k===39?1:-1)+len)%len; markBar(); return; }
+    if(k===13 && bar && bar.children[bIdx]){ e.preventDefault(); e.stopImmediatePropagation(); bar.children[bIdx].click(); return; }
+    e.preventDefault(); e.stopImmediatePropagation();
+  }, true);
+})();
+</script>
 </body>
 </html>
